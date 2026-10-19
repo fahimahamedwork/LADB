@@ -51,8 +51,6 @@ import com.ladb.reborn.AppContainer
 import com.ladb.reborn.core.AppEntry
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import java.text.DateFormat
-import java.util.Date
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -116,13 +114,9 @@ fun AppDetailSheet(
 
             Spacer(Modifier.height(12.dp))
 
-            DetailRow("Version", "${entry.versionName ?: "?"} (${entry.versionCode})")
-            DetailRow("Target SDK", entry.targetSdk.toString())
-            DetailRow("Kind", if (entry.isSystem) "System app" else "User app")
-            DetailRow("State", if (entry.enabled) "Enabled" else "Disabled")
-            DetailRow("Installed", DateFormat.getDateInstance().format(Date(entry.installTime)))
-            DetailRow("UID", entry.uid.toString())
-            DetailRow("APK", entry.apkPath, monospace = true)
+            DetailRow("Version", entry.versionName ?: "?")
+            DetailRow("Type", if (entry.isSystem) "System" else "User")
+            if (!entry.enabled) DetailRow("State", "Disabled")
 
             Spacer(Modifier.height(12.dp))
             HorizontalDivider()
@@ -162,8 +156,8 @@ fun AppDetailSheet(
                     val r = kotlinx.coroutines.runBlocking { repo.extractApk(entry) }
                     busy = false
                     r.fold(
-                        { uri -> repo.shareApk(uri); onMessage("APK exported") },
-                        { onMessage("Extract failed: ${it.message}") },
+                        { uri -> repo.shareApk(uri); onMessage("APK saved") },
+                        { onMessage("Error: ${it.message}") },
                     )
                 }.start()
             }, enabled = !busy && entry.apkPath.isNotBlank()) { Text("Extract APK") }
@@ -192,9 +186,9 @@ fun AppDetailSheet(
                     Text("Permissions", style = MaterialTheme.typography.titleSmall)
                     Text(
                         when {
-                            permsLoading -> "Checking granted state…"
-                            !permsExpanded && displayPerms.isEmpty() -> "None requested · tap to show"
-                            !permsExpanded -> "${displayPerms.size} requested · tap to show"
+                            permsLoading -> "Loading…"
+                            !permsExpanded && displayPerms.isEmpty() -> "None · tap to show"
+                            !permsExpanded -> "${displayPerms.size} · tap to show"
                             else -> "Tap to hide"
                         },
                         style = MaterialTheme.typography.bodySmall,
@@ -211,7 +205,7 @@ fun AppDetailSheet(
             AnimatedVisibility(visible = permsExpanded) {
                 Column {
                     if (permsLoading) {
-                        Text("Loading granted state…", style = MaterialTheme.typography.bodySmall)
+                        Text("Loading…", style = MaterialTheme.typography.bodySmall)
                     } else if (displayPerms.isEmpty()) {
                         Text("No permissions requested.", style = MaterialTheme.typography.bodySmall)
                     } else {
@@ -223,7 +217,7 @@ fun AppDetailSheet(
                                 supportingContent = {
                                     Text(
                                         when (isGranted) {
-                                            null -> "not grantable / not requested at runtime"
+                                            null -> "not grantable"
                                             true -> "granted"
                                             false -> "revoked"
                                         },
@@ -245,7 +239,7 @@ fun AppDetailSheet(
                                                     }
                                                     r.fold(
                                                         { map[perm] = want; onMessage("$shortName ${if (want) "granted" else "revoked"}") },
-                                                        { onMessage("Failed: ${r.exceptionOrNull()?.message ?: "error"}") },
+                                                        { onMessage("Error: ${r.exceptionOrNull()?.message ?: "unknown"}") },
                                                     )
                                                     granted = map
                                                     busy = false
@@ -265,19 +259,19 @@ fun AppDetailSheet(
     // ---- Confirmations ----
     val confirm = confirmAction
     val confirmContent: Triple<String, String, () -> Result<String>>? = when (confirm) {
-        "uninstall" -> Triple("Uninstall app", "Uninstall ${entry.label} for user 0?") {
+        "uninstall" -> Triple("Uninstall", "Uninstall ${entry.label}?") {
             kotlinx.coroutines.runBlocking { repo.uninstall(entry.packageName) }
         }
-        "clear" -> Triple("Clear data", "Clear all app data of ${entry.label}?") {
+        "clear" -> Triple("Clear data", "Clear all data?") {
             kotlinx.coroutines.runBlocking { repo.clearData(entry.packageName) }
         }
         "force-stop" -> Triple("Force stop", "Force stop ${entry.label}?") {
             kotlinx.coroutines.runBlocking { repo.forceStop(entry.packageName) }
         }
-        "disable" -> Triple("Disable app", "Disable ${entry.label} for user 0?") {
+        "disable" -> Triple("Disable", "Disable ${entry.label}?") {
             kotlinx.coroutines.runBlocking { repo.disable(entry.packageName) }
         }
-        "enable" -> Triple("Enable app", "Enable ${entry.label}?") {
+        "enable" -> Triple("Enable", "Enable ${entry.label}?") {
             kotlinx.coroutines.runBlocking { repo.enable(entry.packageName) }
         }
         else -> null
@@ -290,14 +284,26 @@ fun AppDetailSheet(
             text = { Text(message) },
             confirmButton = {
                 TextButton(onClick = {
+                    val action = confirmAction
                     confirmAction = null
                     busy = true
                     Thread {
                         val r = run()
                         busy = false
                         r.fold(
-                            { onMessage("$title: done"); onMutated() },
-                            { onMessage("Failed: ${it.message ?: "error"}") },
+                            {
+                                onMutated()
+                                onMessage(
+                                    when (action) {
+                                        "uninstall" -> "Uninstalled"
+                                        "clear" -> "Data cleared"
+                                        "force-stop" -> "Force stopped"
+                                        "disable" -> "Disabled"
+                                        else -> "Enabled"
+                                    }
+                                )
+                            },
+                            { onMessage("Error: ${it.message ?: "unknown"}") },
                         )
                     }.start()
                 }) { Text("Confirm") }

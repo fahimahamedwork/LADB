@@ -21,8 +21,6 @@ import androidx.compose.material.icons.outlined.KeyboardArrowDown
 import androidx.compose.material.icons.outlined.KeyboardArrowUp
 import androidx.compose.material.icons.outlined.Refresh
 import androidx.compose.material.icons.outlined.ClearAll
-import androidx.compose.material.icons.outlined.VerticalAlignBottom
-import androidx.compose.material3.AssistChip
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -189,15 +187,64 @@ fun TerminalScreen(container: AppContainer) {
                     },
             )
 
-            // Jump-to-bottom pill when scrolled up.
+            // Compact toolbar overlay (top-right): copy screen, clear.
+            Row(
+                Modifier
+                    .align(Alignment.TopEnd)
+                    .padding(6.dp),
+                horizontalArrangement = Arrangement.spacedBy(4.dp),
+            ) {
+                Surface(
+                    onClick = {
+                        controller.session?.let { clipboard.setText(AnnotatedString(grabVisibleScreen(it))) }
+                    },
+                    shape = MaterialTheme.shapes.small,
+                    color = MaterialTheme.colorScheme.surface.copy(alpha = 0.75f),
+                ) {
+                    Icon(
+                        Icons.Outlined.ContentCopy,
+                        "Copy screen",
+                        Modifier
+                            .padding(6.dp)
+                            .size(16.dp),
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                Surface(
+                    onClick = { controller.writeLine("clear") },
+                    shape = MaterialTheme.shapes.small,
+                    color = MaterialTheme.colorScheme.surface.copy(alpha = 0.75f),
+                ) {
+                    Icon(
+                        Icons.Outlined.ClearAll,
+                        "Clear terminal",
+                        Modifier
+                            .padding(6.dp)
+                            .size(16.dp),
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
+
+            // Jump-to-latest pill when scrolled up.
             if (scrollRows > 0) {
-                AssistChip(
+                Surface(
                     onClick = { scrollRows = 0 },
-                    label = { Text("↓ live") },
+                    shape = MaterialTheme.shapes.large,
+                    color = MaterialTheme.colorScheme.surface.copy(alpha = 0.75f),
                     modifier = Modifier
                         .align(Alignment.BottomEnd)
                         .padding(12.dp),
-                )
+                ) {
+                    Icon(
+                        Icons.Outlined.KeyboardArrowDown,
+                        "Jump to latest",
+                        Modifier
+                            .padding(8.dp)
+                            .size(16.dp),
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
             }
 
             // Status overlay when shell is not running.
@@ -208,12 +255,12 @@ fun TerminalScreen(container: AppContainer) {
                     shape = MaterialTheme.shapes.medium,
                 ) {
                     Column(
-                        Modifier.padding(24.dp),
+                        Modifier.padding(20.dp),
                         horizontalAlignment = Alignment.CenterHorizontally,
                     ) {
-                        CircularProgressIndicator(Modifier.size(32.dp))
+                        CircularProgressIndicator(Modifier.size(28.dp))
                         Text(
-                            "Connecting to shell…",
+                            "Connecting…",
                             style = MaterialTheme.typography.bodyMedium,
                             modifier = Modifier.padding(top = 12.dp),
                         )
@@ -276,20 +323,12 @@ fun TerminalScreen(container: AppContainer) {
                             }
                         } else false
                     },
-                placeholder = { Text(if (conn is ConnState.Connected) "shell command" else "waiting for connection…") },
+                placeholder = { Text(if (conn is ConnState.Connected) "shell" else "connecting…") },
                 singleLine = true,
                 keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
                 keyboardActions = KeyboardActions(onSend = { send() }),
             )
-            IconButton(onClick = {
-                controller.session?.let { clipboard.setText(AnnotatedString(grabVisibleScreen(it))) }
-            }) {
-                Icon(Icons.Outlined.ContentCopy, contentDescription = "Copy screen")
-            }
-            IconButton(onClick = { controller.writeLine("clear") }) {
-                Icon(Icons.Outlined.ClearAll, contentDescription = "Clear")
-            }
-            IconButton(onClick = { send() }) {
+            IconButton(onClick = { send() }, enabled = input.text.isNotBlank()) {
                 Icon(Icons.AutoMirrored.Outlined.Send, contentDescription = "Send")
             }
         }

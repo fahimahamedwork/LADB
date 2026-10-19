@@ -57,7 +57,7 @@ fun BootScreen(container: AppContainer) {
         CircularProgressIndicator(Modifier.size(36.dp))
         Spacer(Modifier.height(20.dp))
         Text("LADB Reborn", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
-        Text("Establishing local ADB shell…", style = MaterialTheme.typography.bodyMedium)
+        Text("Starting shell…", style = MaterialTheme.typography.bodyMedium)
         Spacer(Modifier.height(16.dp))
         Card(Modifier.fillMaxWidth()) {
             Column(Modifier.padding(12.dp)) {
@@ -103,7 +103,7 @@ fun PairingScreen(container: AppContainer) {
     ) {
         Text("LADB Reborn", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
         Text(
-            "Local ADB shell — no PC required",
+            "Local wireless ADB",
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
@@ -121,9 +121,7 @@ fun PairingScreen(container: AppContainer) {
                 Text("Pair with this device", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
                 Spacer(Modifier.height(4.dp))
                 Text(
-                    "1. Open Settings → Developer options → Wireless debugging\n" +
-                        "2. Tap “Pair device with pairing code”\n" +
-                        "3. Enter the port and 6-digit code below",
+                    "Developer options → Wireless debugging → Pair device with code",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -165,12 +163,12 @@ fun PairingScreen(container: AppContainer) {
                         onClick = { adb.pair(port, code) },
                         enabled = !busy && port.length >= 3 && code.length == 6,
                         modifier = Modifier.weight(1f),
-                    ) { Text("Pair & connect") }
+                    ) { Text("Pair") }
                 }
                 if (pairingPortDiscovered != null) {
                     Spacer(Modifier.height(4.dp))
                     Text(
-                        "Pairing dialog detected on port $pairingPortDiscovered ✓",
+                        "Port $pairingPortDiscovered detected ✓",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.primary,
                     )
@@ -182,13 +180,13 @@ fun PairingScreen(container: AppContainer) {
 
         Card(Modifier.fillMaxWidth()) {
             Column(Modifier.padding(16.dp)) {
-                Text("Already paired?", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+                Text("Manual connect", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
                 Spacer(Modifier.height(8.dp))
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     OutlinedTextField(
                         value = manualPort,
                         onValueChange = { manualPort = it.filter(Char::isDigit).take(6) },
-                        label = { Text("Wireless debugging port") },
+                        label = { Text("Port") },
                         modifier = Modifier.weight(1f),
                         singleLine = true,
                         enabled = !busy,
@@ -199,7 +197,7 @@ fun PairingScreen(container: AppContainer) {
                     ) { Text("Connect") }
                 }
                 Text(
-                    "Port is shown at the top of the Wireless debugging screen.",
+                    "Shown on the Wireless debugging screen.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.padding(top = 4.dp),
@@ -238,7 +236,7 @@ fun PairingScreen(container: AppContainer) {
         }
 
         Spacer(Modifier.height(12.dp))
-        TextButton(onClick = { adb.resetConnection() }) { Text("Reset ADB connection") }
+        TextButton(onClick = { adb.resetConnection() }) { Text("Reset connection") }
         Spacer(Modifier.height(24.dp))
     }
 }

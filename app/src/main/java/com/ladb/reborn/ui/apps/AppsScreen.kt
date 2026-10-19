@@ -102,7 +102,7 @@ fun AppsScreen(container: AppContainer) {
             OutlinedTextField(
                 value = query,
                 onValueChange = { query = it },
-                placeholder = { Text("Search ${apps.size} apps…") },
+                placeholder = { Text("Search apps") },
                 leadingIcon = { Icon(Icons.Outlined.Search, null) },
                 singleLine = true,
                 modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
@@ -176,15 +176,13 @@ private fun AppRow(entry: AppEntry, iconLoader: (String) -> Drawable?, onClick: 
             }
             Column(horizontalAlignment = Alignment.End) {
                 Text(entry.versionName ?: "?", style = MaterialTheme.typography.bodySmall)
-                Text(
-                    when {
-                        !entry.enabled -> "disabled"
-                        entry.isSystem -> "system"
-                        else -> "user"
-                    },
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
+                if (!entry.enabled || entry.isSystem) {
+                    Text(
+                        if (!entry.enabled) "disabled" else "system",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
             }
         }
     }

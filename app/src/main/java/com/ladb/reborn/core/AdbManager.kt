@@ -87,9 +87,9 @@ class AdbManager(
 
             _state.value = ConnState.NeedsSetup(
                 if (port == null)
-                    "Wireless debugging port was not discovered. Make sure Wireless debugging is enabled, then retry."
+                    "No Wireless debugging port found. Make sure it's on, then retry."
                 else
-                    "Could not connect on port $port. Try pairing again."
+                    "Couldn't connect on port $port. Try pairing again."
             )
         }.also { bootstrapJob = it }
     }
@@ -114,7 +114,7 @@ class AdbManager(
         withContext(Dispatchers.Main) {
             controller.start(serial, columns = 80, rows = 24)
         }
-        log("Connected. Happy hacking!")
+        log("Connected.")
         _state.value = ConnState.Connected(serial)
     }
 
@@ -134,11 +134,11 @@ class AdbManager(
                     ?: pairingPort.toIntOrNull()
                 if (connectPort != null && tryConnect(connectPort)) return@launch
                 _state.value = ConnState.NeedsSetup(
-                    "Paired, but the connect port was not discovered yet. Toggle Wireless debugging or tap Connect."
+                    "Paired. Connect port not found — toggle Wireless debugging, then connect."
                 )
             } else {
                 _state.value = ConnState.NeedsSetup(
-                    "Pairing failed. Double-check the pairing code and port, then try again."
+                    "Pairing failed. Check the code and port, then retry."
                 )
             }
         }
@@ -171,8 +171,8 @@ class AdbManager(
             settings.lastPort = null
             settings.pairedOnce = false
             _events.value = emptyList()
-            log("ADB server killed. Start fresh.")
-            _state.value = ConnState.NeedsSetup("Connection reset. Pair again to continue.")
+            log("ADB server killed.")
+            _state.value = ConnState.NeedsSetup("Connection reset. Pair again.")
         }
     }
 }

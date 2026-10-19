@@ -31,6 +31,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.ladb.reborn.AppContainer
+import com.ladb.reborn.BuildConfig
 
 @Composable
 fun SettingsScreen(container: AppContainer) {
@@ -56,7 +57,7 @@ fun SettingsScreen(container: AppContainer) {
                 }
             }
             Spacer(Modifier.height(12.dp))
-            Text("Terminal font size — ${settings.fontSp}sp", style = MaterialTheme.typography.bodyMedium)
+            Text("Font size · ${settings.fontSp}", style = MaterialTheme.typography.bodyMedium)
             Slider(
                 value = settings.fontSp.toFloat(),
                 onValueChange = { container.settings.update { s -> s.copy(fontSp = it.toInt().coerceIn(9, 22)) } },
@@ -71,13 +72,13 @@ fun SettingsScreen(container: AppContainer) {
                 value = startupDraft,
                 onValueChange = { startupDraft = it },
                 label = { Text("Startup command") },
-                supportingText = { Text("Runs right after the shell connects") },
+                supportingText = { Text("Runs on connect") },
                 modifier = Modifier.fillMaxWidth(),
                 singleLine = true,
             )
             TextButton(onClick = {
                 container.settings.update { it.copy(startupCommand = startupDraft.trim()) }
-            }) { Text("Save startup command") }
+            }) { Text("Save") }
 
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(
@@ -95,28 +96,26 @@ fun SettingsScreen(container: AppContainer) {
         // ---- Data ----
         SectionCard("Data") {
             OutlinedButton(onClick = { container.history.clear() }) {
-                Text("Clear command history")
+                Text("Clear history")
             }
             Spacer(Modifier.height(6.dp))
             OutlinedButton(onClick = { container.adbManager.resetConnection() }) {
-                Text("Reset ADB connection (re-pair)")
+                Text("Reset connection")
             }
         }
 
         // ---- About ----
         SectionCard("About") {
-            Text("LADB Reborn 3.0.0", fontWeight = FontWeight.SemiBold)
+            Text("LADB Reborn ${BuildConfig.VERSION_NAME}", fontWeight = FontWeight.SemiBold)
             Text(
-                "A local ADB shell — talks to your own device over Wireless debugging. " +
-                    "No data leaves the device.",
+                "Local wireless ADB shell. Nothing leaves your device.",
                 style = MaterialTheme.typography.bodySmall,
             )
             Spacer(Modifier.height(6.dp))
             HorizontalDivider()
             Spacer(Modifier.height(6.dp))
             Text(
-                "Built on the original LADB concept by draco (Tyler Nijmeh), the AOSP adb client, " +
-                    "and the Termux terminal-emulator engine (Apache-2.0).",
+                "Based on LADB · AOSP adb · Termux terminal emulator",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
