@@ -1,6 +1,7 @@
 package com.ladb.reborn.ui.terminal
 
-import android.view.KeyEvent
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -10,93 +11,72 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.lazy.LazyRow
-import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.outlined.Send
+import androidx.compose.material.icons.outlined.ClearAll
 import androidx.compose.material.icons.outlined.ContentCopy
 import androidx.compose.material.icons.outlined.KeyboardArrowDown
-import androidx.compose.material.icons.outlined.KeyboardArrowUp
 import androidx.compose.material.icons.outlined.Refresh
-import androidx.compose.material.icons.outlined.ClearAll
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.SuggestionChip
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
-import androidx.compose.runtime.collectAsState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.isCtrlPressed
+import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.input.key.type
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.TextRange
-import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.ladb.reborn.AppContainer
 import com.ladb.reborn.core.ConnState
 import kotlinx.coroutines.channels.Channel
-import androidx.compose.foundation.gestures.detectVerticalDragGestures
-import androidx.compose.ui.input.pointer.pointerInput
+import kotlinx.coroutines.delay
 import kotlin.math.roundToInt
 
-private val BUILTIN_COMMANDS = listOf(
-    "pm list packages",
-    "pm list packages -3",
-    "pm path ",
-    "dumpsys battery",
-    "dumpsys activity top",
-    "dumpsys package ",
-    "wm size",
-    "wm density",
-    "getprop ro.build.version.release",
-    "logcat -d",
-    "screencap -p /sdcard/screenshot.png",
-    "ps -A",
-    "top",
-    "df -h",
-    "cat /proc/cpuinfo",
-    "settings get global adb_wifi_enabled",
-    "am force-stop ",
-    "pm uninstall --user 0 ",
-    "pm grant ",
-    "pm revoke ",
-    "input keyevent ",
-    "cmd package compile -m speed ",
-)
+// Zero-width sentinel that keeps one character in the hidden IME field so
+// backspace always produces a deletion we can forward to the pty.
+private const val IME_SENTINEL = "\u200B"
 
 @Composable
 fun TerminalScreen(container: AppContainer) {
     val adb = container.adbManager
     val controller = adb.controller
     val settings by container.settings.settings.collectAsState()
-    val history by container.history.items.collectAsState()
     val conn by adb.state.collectAsState()
 
     var frame by remember { mutableIntStateOf(0) }
     var scrollRows by remember { mutableIntStateOf(0) }
     var gridCols by remember { mutableIntStateOf(80) }
     var gridRows by remember { mutableIntStateOf(24) }
-    var input by remember { mutableStateOf(TextFieldValue("")) }
-    var historyIndex by remember { mutableStateOf<Int?>(null) }
-    var draft by remember { mutableStateOf("") }
-    var packageNames by remember { mutableStateOf<List<String>>(emptyList()) }
+    var ctrlSticky by remember { mutableStateOf(false) }
+    var ime by remember { mutableStateOf(TextFieldValue(IME_SENTINEL)) }
     val focusRequester = remember { FocusRequester() }
     val clipboard = LocalClipboardManager.current
 
@@ -110,57 +90,27 @@ fun TerminalScreen(container: AppContainer) {
     // Apply grid size to the pty session.
     LaunchedEffect(gridCols, gridRows) { controller.resize(gridCols, gridRows) }
 
-    // Preload package names for autocomplete.
+    // Show the keyboard as soon as the terminal opens.
     LaunchedEffect(Unit) {
-        runCatching { packageNames = container.apps.searchPackageNames() }
+        delay(400)
+        runCatching { focusRequester.requestFocus() }
     }
 
-    fun send() {
-        val command = input.text.trim()
-        if (command.isEmpty()) return
-        controller.writeLine(command)
-        container.history.add(command)
-        input = TextFieldValue("")
-        historyIndex = null
-        scrollRows = 0
-    }
-
-    fun historyPrev() {
-        if (history.isEmpty()) return
-        if (historyIndex == null) {
-            draft = input.text
-            historyIndex = history.lastIndex
+    fun sendText(text: String) {
+        if (text.isEmpty()) return
+        if (ctrlSticky) {
+            text.forEach { ch -> controller.writeBytes(byteArrayOf((ch.code and 0x1f).toByte())) }
+            ctrlSticky = false
         } else {
-            historyIndex = (historyIndex!! - 1).coerceAtLeast(0)
-        }
-        val cmd = history[historyIndex!!]
-        input = TextFieldValue(cmd, TextRange(cmd.length))
-    }
-
-    fun historyNext() {
-        val idx = historyIndex ?: return
-        if (idx >= history.lastIndex) {
-            historyIndex = null
-            input = TextFieldValue(draft, TextRange(draft.length))
-        } else {
-            historyIndex = idx + 1
-            val cmd = history[historyIndex!!]
-            input = TextFieldValue(cmd, TextRange(cmd.length))
+            controller.writeBytes(text.toByteArray(Charsets.UTF_8))
         }
     }
 
-    // Autocomplete pool = recent history (newest first) + builtins + package names.
-    val lastToken = input.text.substringAfterLast(' ', missingDelimiterValue = input.text)
-    val suggestions = remember(input.text, history, packageNames) {
-        if (lastToken.isBlank() || input.text.endsWith(" ")) {
-            emptyList()
-        } else {
-            val pool = (history.asReversed() + BUILTIN_COMMANDS + packageNames).distinct()
-            val starts = pool.filter { it != input.text && it.startsWith(lastToken, ignoreCase = true) }
-            val contains = pool.filter { it != input.text && !it.startsWith(lastToken, ignoreCase = true) && it.contains(lastToken, ignoreCase = true) }
-            (starts + contains).take(8)
-        }
+    fun sendBytes(vararg bytes: Int) {
+        controller.writeBytes(bytes.map { it.toByte() }.toByteArray())
     }
+
+    fun sendEscSeq(c: Char) = sendBytes(0x1B, '['.code, c.code)
 
     Column(Modifier.fillMaxSize()) {
         // ---- Terminal viewport ----
@@ -178,6 +128,9 @@ fun TerminalScreen(container: AppContainer) {
                 modifier = Modifier
                     .fillMaxSize()
                     .pointerInput(Unit) {
+                        detectTapGestures { focusRequester.requestFocus() }
+                    }
+                    .pointerInput(Unit) {
                         detectVerticalDragGestures { change, dragAmount ->
                             change.consume()
                             val transcript = controller.session?.getEmulator()?.getScreen()?.getActiveTranscriptRows() ?: 0
@@ -185,6 +138,51 @@ fun TerminalScreen(container: AppContainer) {
                                 .coerceIn(0, transcript)
                         }
                     },
+            )
+
+            // Invisible IME capture field: the terminal itself is the editor.
+            BasicTextField(
+                value = ime,
+                onValueChange = { v ->
+                    val old = ime.text
+                    val new = v.text
+                    when {
+                        new.length > old.length -> sendText(new.substring(old.length))
+                        new.length < old.length -> repeat(old.length - new.length) {
+                            sendBytes(0x7F) // DEL
+                        }
+                    }
+                    ime = TextFieldValue(IME_SENTINEL, TextRange(IME_SENTINEL.length))
+                },
+                modifier = Modifier
+                    .size(1.dp)
+                    .focusRequester(focusRequester)
+                    .onPreviewKeyEvent { event ->
+                        if (event.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
+                        when {
+                            event.key == Key.Enter || event.key == Key.NumPadEnter -> {
+                                sendBytes('\r'.code); true
+                            }
+                            event.key == Key.Backspace -> { sendBytes(0x7F); true }
+                            event.key == Key.Tab -> { sendBytes(0x09); true }
+                            event.key == Key.Escape -> { sendBytes(0x1B); true }
+                            event.key == Key.DirectionUp -> { sendEscSeq('A'); true }
+                            event.key == Key.DirectionDown -> { sendEscSeq('B'); true }
+                            event.key == Key.DirectionLeft -> { sendEscSeq('D'); true }
+                            event.key == Key.DirectionRight -> { sendEscSeq('C'); true }
+                            event.isCtrlPressed && event.nativeKeyEvent.getUnicodeChar(0) != 0 -> {
+                                val c = event.nativeKeyEvent.getUnicodeChar(0).toChar()
+                                sendBytes(c.code and 0x1f)
+                                true
+                            }
+                            else -> false // printable keys flow into the field and are diffed out
+                        }
+                    },
+                textStyle = TextStyle(fontSize = 8.sp, color = Color.Transparent),
+                keyboardOptions = KeyboardOptions(
+                    capitalization = KeyboardCapitalization.None,
+                    autoCorrect = false,
+                ),
             )
 
             // Compact toolbar overlay (top-right): copy screen, clear.
@@ -272,65 +270,46 @@ fun TerminalScreen(container: AppContainer) {
             }
         }
 
-        // ---- Suggestions ----
-        if (suggestions.isNotEmpty()) {
-            LazyRow(
-                Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 8.dp, vertical = 2.dp),
-                horizontalArrangement = Arrangement.spacedBy(6.dp),
-            ) {
-                items(suggestions) { suggestion ->
-                    SuggestionChip(
-                        onClick = {
-                            val newText = input.text.dropLast(lastToken.length) + suggestion + " "
-                            input = TextFieldValue(newText, TextRange(newText.length))
-                        },
-                        label = { Text(suggestion, maxLines = 1) },
-                    )
-                }
-            }
-        }
-
-        // ---- Input bar ----
+        // ---- Extra keys row (Termux-style) ----
         Row(
             Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 8.dp, vertical = 6.dp),
-            verticalAlignment = Alignment.CenterVertically,
+                .padding(horizontal = 4.dp, vertical = 4.dp),
+            horizontalArrangement = Arrangement.spacedBy(4.dp),
         ) {
-            IconButton(onClick = { historyPrev() }, enabled = history.isNotEmpty()) {
-                Icon(Icons.Outlined.KeyboardArrowUp, contentDescription = "Previous command")
-            }
-            IconButton(onClick = { historyNext() }, enabled = historyIndex != null) {
-                Icon(Icons.Outlined.KeyboardArrowDown, contentDescription = "Next command")
-            }
-            OutlinedTextField(
-                value = input,
-                onValueChange = {
-                    input = it
-                    historyIndex = null
-                },
-                modifier = Modifier
-                    .weight(1f)
-                    .focusRequester(focusRequester)
-                    .onPreviewKeyEvent { event ->
-                        if (event.nativeKeyEvent.action == KeyEvent.ACTION_DOWN) {
-                            when (event.nativeKeyEvent.keyCode) {
-                                KeyEvent.KEYCODE_DPAD_UP -> { historyPrev(); true }
-                                KeyEvent.KEYCODE_DPAD_DOWN -> { historyNext(); true }
-                                else -> false
-                            }
-                        } else false
-                    },
-                placeholder = { Text(if (conn is ConnState.Connected) "shell" else "connecting…") },
-                singleLine = true,
-                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
-                keyboardActions = KeyboardActions(onSend = { send() }),
+            ExtraKey("ESC", Modifier.weight(1f)) { sendBytes(0x1B) }
+            ExtraKey("TAB", Modifier.weight(1f)) { sendBytes(0x09) }
+            ExtraKey("CTRL", Modifier.weight(1f), active = ctrlSticky) { ctrlSticky = !ctrlSticky }
+            ExtraKey("←", Modifier.weight(1f)) { sendEscSeq('D') }
+            ExtraKey("↑", Modifier.weight(1f)) { sendEscSeq('A') }
+            ExtraKey("↓", Modifier.weight(1f)) { sendEscSeq('B') }
+            ExtraKey("→", Modifier.weight(1f)) { sendEscSeq('C') }
+        }
+    }
+}
+
+@Composable
+private fun ExtraKey(label: String, modifier: Modifier = Modifier, active: Boolean = false, onClick: () -> Unit) {
+    Surface(
+        onClick = onClick,
+        shape = MaterialTheme.shapes.small,
+        color = if (active) MaterialTheme.colorScheme.primaryContainer
+        else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+        modifier = modifier,
+    ) {
+        Box(
+            Modifier
+                .fillMaxWidth()
+                .height(38.dp),
+            contentAlignment = Alignment.Center,
+        ) {
+            Text(
+                label,
+                fontSize = 12.sp,
+                fontFamily = FontFamily.Monospace,
+                color = if (active) MaterialTheme.colorScheme.onPrimaryContainer
+                else MaterialTheme.colorScheme.onSurfaceVariant,
             )
-            IconButton(onClick = { send() }, enabled = input.text.isNotBlank()) {
-                Icon(Icons.AutoMirrored.Outlined.Send, contentDescription = "Send")
-            }
         }
     }
 }

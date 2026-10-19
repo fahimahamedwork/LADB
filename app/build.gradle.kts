@@ -12,8 +12,8 @@ android {
         applicationId = "com.ladb.reborn"
         minSdk = 30
         targetSdk = 35
-        versionCode = 310
-        versionName = "3.1.0"
+        versionCode = 320
+        versionName = "3.2.0"
 
         ndk {
             abiFilters += listOf("arm64-v8a", "armeabi-v7a", "x86", "x86_64")

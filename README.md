@@ -11,7 +11,7 @@ no data leaves the device.
 | UI | XML Views, single Activity | Jetpack Compose + Material 3 (dynamic color) |
 | Terminal | Plain TextView + 100 ms file polling, 16 KB cap | Termux terminal-emulator engine, real pty, full ANSI/colors, 5000-line scrollback |
 | TUI apps | Not supported | vim / htop / top work (`adb shell -t` + pty resize via SIGWINCH) |
-| Input | Single last command | Persistent history (500) + ↑/↓ + inline autocomplete (history, commands, package names) |
+| Input | Single last command | Direct-touch terminal — type on screen with Termux-style extra keys (ESC / TAB / CTRL / arrows), shell-native history + TAB completion |
 | App manager | None | Full list w/ search + filters, launch / force-stop / uninstall / clear data / disable / enable / grant-revoke permissions / extract APK |
 | Pairing | Single dialog | Guided wizard, mDNS auto-detects both connect & pairing ports, live status console, manual port fallback |
 | Bloat | PiracyChecker, Play OSS-licenses | Removed |
