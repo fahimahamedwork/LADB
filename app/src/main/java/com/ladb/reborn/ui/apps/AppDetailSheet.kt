@@ -3,7 +3,9 @@ package com.ladb.reborn.ui.apps
 import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.drawable.Drawable
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -16,7 +18,10 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.AdminPanelSettings
 import androidx.compose.material.icons.filled.Android
+import androidx.compose.material.icons.filled.ExpandLess
+import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
@@ -62,17 +67,24 @@ fun AppDetailSheet(
     val repo = container.apps
     var confirmAction by remember { mutableStateOf<String?>(null) }
     var granted by remember { mutableStateOf<Map<String, Boolean>>(emptyMap()) }
-    var permsLoading by remember { mutableStateOf(true) }
+    var permsExpanded by remember { mutableStateOf(false) }
+    var permsLoaded by remember { mutableStateOf(false) }
+    var permsLoading by remember { mutableStateOf(false) }
     var busy by remember { mutableStateOf(false) }
 
     val iconBitmap by produceState<Bitmap?>(initialValue = null, key1 = entry.packageName) {
         value = withContext(Dispatchers.IO) { repo.iconFor(entry.packageName)?.toBitmap(128, 128) }
     }
 
-    LaunchedEffect(entry.packageName) {
-        permsLoading = true
-        granted = runCatching { repo.grantedPermissions(entry.packageName) }.getOrDefault(emptyMap())
-        permsLoading = false
+    // Permissions stay hidden until the user expands the section; the granted
+    // state (a slow `dumpsys package` round-trip) is fetched lazily on first expand.
+    LaunchedEffect(entry.packageName, permsExpanded) {
+        if (permsExpanded && !permsLoaded) {
+            permsLoading = true
+            granted = runCatching { repo.grantedPermissions(entry.packageName) }.getOrDefault(emptyMap())
+            permsLoading = false
+            permsLoaded = true
+        }
     }
 
     ModalBottomSheet(onDismissRequest = onDismiss) {
@@ -160,55 +172,90 @@ fun AppDetailSheet(
             HorizontalDivider()
             Spacer(Modifier.height(8.dp))
 
-            // ---- Permissions ----
-            Text("Permissions", style = MaterialTheme.typography.titleSmall)
-            if (permsLoading) {
-                Text("Loading granted state…", style = MaterialTheme.typography.bodySmall)
-            } else {
-                val displayPerms = entry.permissions.filter { it.startsWith("android.permission.") }
-                if (displayPerms.isEmpty()) {
-                    Text("No permissions requested.", style = MaterialTheme.typography.bodySmall)
-                } else {
-                    displayPerms.forEach { perm ->
-                        val shortName = perm.substringAfterLast('.')
-                        val isGranted = granted[perm]
-                        ListItem(
-                            headlineContent = { Text(shortName, style = MaterialTheme.typography.bodyMedium) },
-                            supportingContent = {
-                                Text(
-                                    when (isGranted) {
-                                        null -> "not grantable / not requested at runtime"
-                                        true -> "granted"
-                                        false -> "revoked"
-                                    },
-                                    style = MaterialTheme.typography.bodySmall,
-                                )
-                            },
-                            trailingContent = {
-                                if (isGranted != null) {
-                                    Switch(
-                                        checked = isGranted,
-                                        enabled = !busy,
-                                        onCheckedChange = { want ->
-                                            busy = true
-                                            val map = granted.toMutableMap()
-                                            Thread {
-                                                val r = kotlinx.coroutines.runBlocking {
-                                                    if (want) repo.grant(entry.packageName, perm)
-                                                    else repo.revoke(entry.packageName, perm)
-                                                }
-                                                r.fold(
-                                                    { map[perm] = want; onMessage("$shortName ${if (want) "granted" else "revoked"}") },
-                                                    { onMessage("Failed: ${r.exceptionOrNull()?.message ?: "error"}") },
-                                                )
-                                                granted = map
-                                                busy = false
-                                            }.start()
+            // ---- Permissions (hidden by default — tap the header to show) ----
+            val displayPerms = entry.permissions.filter { it.startsWith("android.permission.") }
+            Row(
+                Modifier
+                    .fillMaxWidth()
+                    .clickable { permsExpanded = !permsExpanded }
+                    .padding(vertical = 10.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Icon(
+                    Icons.Filled.AdminPanelSettings,
+                    contentDescription = null,
+                    modifier = Modifier.size(20.dp),
+                    tint = MaterialTheme.colorScheme.primary,
+                )
+                Spacer(Modifier.width(8.dp))
+                Column(Modifier.weight(1f)) {
+                    Text("Permissions", style = MaterialTheme.typography.titleSmall)
+                    Text(
+                        when {
+                            permsLoading -> "Checking granted state…"
+                            !permsExpanded && displayPerms.isEmpty() -> "None requested · tap to show"
+                            !permsExpanded -> "${displayPerms.size} requested · tap to show"
+                            else -> "Tap to hide"
+                        },
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                Icon(
+                    if (permsExpanded) Icons.Filled.ExpandLess else Icons.Filled.ExpandMore,
+                    contentDescription = if (permsExpanded) "Hide permissions" else "Show permissions",
+                    modifier = Modifier.size(24.dp),
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            AnimatedVisibility(visible = permsExpanded) {
+                Column {
+                    if (permsLoading) {
+                        Text("Loading granted state…", style = MaterialTheme.typography.bodySmall)
+                    } else if (displayPerms.isEmpty()) {
+                        Text("No permissions requested.", style = MaterialTheme.typography.bodySmall)
+                    } else {
+                        displayPerms.forEach { perm ->
+                            val shortName = perm.substringAfterLast('.')
+                            val isGranted = granted[perm]
+                            ListItem(
+                                headlineContent = { Text(shortName, style = MaterialTheme.typography.bodyMedium) },
+                                supportingContent = {
+                                    Text(
+                                        when (isGranted) {
+                                            null -> "not grantable / not requested at runtime"
+                                            true -> "granted"
+                                            false -> "revoked"
                                         },
+                                        style = MaterialTheme.typography.bodySmall,
                                     )
-                                }
-                            },
-                        )
+                                },
+                                trailingContent = {
+                                    if (isGranted != null) {
+                                        Switch(
+                                            checked = isGranted,
+                                            enabled = !busy,
+                                            onCheckedChange = { want ->
+                                                busy = true
+                                                val map = granted.toMutableMap()
+                                                Thread {
+                                                    val r = kotlinx.coroutines.runBlocking {
+                                                        if (want) repo.grant(entry.packageName, perm)
+                                                        else repo.revoke(entry.packageName, perm)
+                                                    }
+                                                    r.fold(
+                                                        { map[perm] = want; onMessage("$shortName ${if (want) "granted" else "revoked"}") },
+                                                        { onMessage("Failed: ${r.exceptionOrNull()?.message ?: "error"}") },
+                                                    )
+                                                    granted = map
+                                                    busy = false
+                                                }.start()
+                                            },
+                                        )
+                                    }
+                                },
+                            )
+                        }
                     }
                 }
             }
